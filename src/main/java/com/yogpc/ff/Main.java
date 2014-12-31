@@ -31,7 +31,7 @@ import cpw.mods.fml.relauncher.IFMLLoadingPlugin;
 public class Main extends DummyModContainer implements IFMLLoadingPlugin, IClassTransformer {
   private static final boolean TSL_DEBUG = Boolean.parseBoolean(System.getProperty(
       "yog.tessellator.debug", "false"));
-  private static String tsl, potion, BGB, potionAD, BGBAD;
+  private static String tsl, potion, BGB, PE, potionAD, BGBAD;
   private static boolean initialized = false;
   private static final ModMetadata md = new ModMetadata();
   static {
@@ -72,6 +72,7 @@ public class Main extends DummyModContainer implements IFMLLoadingPlugin, IClass
   private static final void init() {
     tsl = FMLDeobfuscatingRemapper.INSTANCE.unmap("net/minecraft/client/renderer/Tessellator");
     potion = FMLDeobfuscatingRemapper.INSTANCE.unmap("net/minecraft/potion/Potion");
+    PE = FMLDeobfuscatingRemapper.INSTANCE.unmap("net/minecraft/potion/PotionEffect");
     BGB = FMLDeobfuscatingRemapper.INSTANCE.unmap("net/minecraft/world/biome/BiomeGenBase");
     potionAD = "[L" + potion + ";";
     BGBAD = "[L" + BGB + ";";
@@ -154,8 +155,8 @@ public class Main extends DummyModContainer implements IFMLLoadingPlugin, IClass
     return cw.toByteArray();
   }
 
-  private static final void add(final InsnList il, final String tu, final String lc,
-      final String owner, final String desc) {
+  private static final void add(final InsnList il, final String tu, final String owner,
+      final String desc) {
     // Find array access
     AbstractInsnNode iter = il.getFirst();
     FieldInsnNode ain = null;
@@ -202,7 +203,7 @@ public class Main extends DummyModContainer implements IFMLLoadingPlugin, IClass
     il.insert(ain, new VarInsnNode(Opcodes.ALOAD, 0));
     il.insert(ain, new MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/StringBuilder", "<init>",
         "(Ljava/lang/String;)V"));
-    il.insert(ain, new LdcInsnNode("Duplicate " + lc + " id! "));
+    il.insert(ain, new LdcInsnNode("Duplicate " + tu.toLowerCase() + " id! "));
     il.insert(ain, new InsnNode(Opcodes.DUP));
     il.insert(ain, new TypeInsnNode(Opcodes.NEW, "java/lang/StringBuilder"));
     il.insert(ain, new InsnNode(Opcodes.DUP));
@@ -214,13 +215,13 @@ public class Main extends DummyModContainer implements IFMLLoadingPlugin, IClass
   }
 
   private static final byte[] addw(final byte[] arg2, final String id, final String tu,
-      final String lc, final String owner, final String desc) {
+      final String owner, final String desc) {
     final ClassNode cnode = new ClassNode();
     final ClassReader reader = new ClassReader(arg2);
     reader.accept(cnode, 0);
     for (final MethodNode mnode : cnode.methods)
       if ("<init>".equals(mnode.name) && id.equals(mnode.desc))
-        add(mnode.instructions, tu, lc, owner, desc);
+        add(mnode.instructions, tu, owner, desc);
     final ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
     cnode.accept(cw);
     return cw.toByteArray();
@@ -266,6 +267,26 @@ public class Main extends DummyModContainer implements IFMLLoadingPlugin, IClass
     return cw.toByteArray();
   }
 
+  private static final byte[] potionEffect(final byte[] b) {
+    final ClassNode c = new ClassNode();
+    final ClassReader reader = new ClassReader(b);
+    reader.accept(c, 0);
+    for (final MethodNode m : c.methods)
+      if ("(IIIZ)V".equals(m.desc) && "<init>".equals(m.name)) {
+        final LabelNode ln = new LabelNode();
+        m.instructions.insert(ln);
+        m.instructions.insert(new VarInsnNode(Opcodes.ISTORE, 1));
+        m.instructions.insert(new InsnNode(Opcodes.IADD));
+        m.instructions.insert(new VarInsnNode(Opcodes.ILOAD, 1));
+        m.instructions.insert(new LdcInsnNode(new Integer(256)));
+        m.instructions.insert(new JumpInsnNode(Opcodes.IFGE, ln));
+        m.instructions.insert(new VarInsnNode(Opcodes.ILOAD, 1));
+      }
+    final ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+    c.accept(cw);
+    return cw.toByteArray();
+  }
+
   @Override
   public byte[] transform(final String arg0, final String arg1, final byte[] arg2) {
     if (!initialized)
@@ -274,9 +295,11 @@ public class Main extends DummyModContainer implements IFMLLoadingPlugin, IClass
     if (tsl.equals(un))
       return tsl(arg2);
     else if (potion.equals(un))
-      return addw(arg2, "(IZI)V", "Potion", "potion", potion, potionAD);
+      return addw(arg2, "(IZI)V", "Potion", potion, potionAD);
     else if (BGB.equals(un))
-      return addw(arg2, "(IZ)V", "Biome", "biome", BGB, BGBAD);
+      return addw(arg2, "(IZ)V", "Biome", BGB, BGBAD);
+    else if (PE.equals(un))
+      potionEffect(arg2);
     else if ("net/minecraftforge/client/model/obj/WavefrontObject".equals(un))
       return wavefrontObject(arg2);
     return arg2;
